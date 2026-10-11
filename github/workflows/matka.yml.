@@ -1,0 +1,49 @@
+name: matka
+
+on:
+  schedule:
+    - cron: "3-58/5 * * * *"   # live poll, every 5 min (odd minutes avoid the busy top of the hour)
+    - cron: "37 20 * * *"      # nightly sync, 02:07 IST
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "live or sync"
+        default: "sync"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: matka
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests beautifulsoup4
+
+      - name: Run job
+        run: |
+          JOB="${{ github.event.inputs.job || (github.event.schedule == '37 20 * * *' && 'sync' || 'live') }}"
+          python gh_job.py "$JOB"
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "data $(date -u +%FT%TZ)"
+            git pull --rebase -q || true
+            git push
+          fi
